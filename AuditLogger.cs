@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Diagnostics;
 using System.Dynamic;
 using System.Reflection;
 using System.Text.Json;
@@ -7,24 +6,27 @@ using System.Text.Json.Serialization;
 using Auditing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Extensions;
 
 namespace Experimental;
 
-public static class AuditLogger
+public class AuditLogger<TContext>(TContext context)
+    where TContext : DbContext
 {
-    private static readonly ICollection<object> _visitedEntries = new List<object>();
+    private readonly ICollection<object> _visitedEntries = new List<object>();
+    private readonly TContext _context = context;
 
-    public static void CreateAuditLog<T>(T entity, DbContext context)
+    public void CreateAuditLog<T>(T entity)
         where T : class
     {
-        var entry = context.Entry(entity);
+        _visitedEntries.Clear();
+
+        var entry = _context.Entry(entity);
 
         if (entry.State == EntityState.Detached || entry.State == EntityState.Unchanged)
             return;
 
-        var dataShapedObject = AuditEntry(entry, entity, context);
-
-        _visitedEntries.Clear();
+        var dataShapedObject = AuditEntry(entry, entity);
 
         Console.WriteLine(JsonSerializer.Serialize(
             dataShapedObject, 
@@ -35,10 +37,7 @@ public static class AuditLogger
             }));
     }
 
-    private static ExpandoObject? AuditEntry<T>(
-        EntityEntry entry, 
-        T entity, 
-        DbContext context)
+    private ExpandoObject? AuditEntry<T>(EntityEntry entry, T entity)
         where T : class
     {
         if(_visitedEntries.Any(e => e == entry.Entity)) return null;
@@ -47,7 +46,7 @@ public static class AuditLogger
         
         var dataShapedObject = new ExpandoObject() as IDictionary<string, object?>;
 
-        foreach (var property in entry.Properties)
+        foreach(var property in entry.Properties)
         {
             string propertyName = property.Metadata.Name;
 
@@ -73,7 +72,7 @@ public static class AuditLogger
         {
             var navigationName = navigation.Metadata.Name;
             var navigationType = navigation.Metadata.FieldInfo!.FieldType;
-            var navigationAudit = ResolveNavigationAudit(navigationName, navigationType, entity, context);
+            var navigationAudit = ResolveNavigationAudit(navigationName, navigationType, entity);
 
             if (navigationAudit is not null)
                 dataShapedObject.Add(navigationName, navigationAudit);
@@ -82,13 +81,16 @@ public static class AuditLogger
         return (dataShapedObject as ExpandoObject)!;
     }
 
-    private static object? ResolveNavigationAudit<T>(string navigationName, Type navigationType, T entity, DbContext context)
+    private object? ResolveNavigationAudit<T>(
+        string navigationName, 
+        Type navigationType, 
+        T entity)
         where T : class
     {
-        var getPropertyValueMethod = typeof(AuditLogger)
-            .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
+        var getPropertyValueMethod = typeof(ObjectExtensions)
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
             .Single(m =>
-                m.Name == nameof(GetPropertyValue) &&
+                m.Name == nameof(ObjectExtensions.GetPropertyValue) &&
                 m.GetGenericArguments().Length == 1 &&
                 m.GetParameters().Length == 2);
 
@@ -96,12 +98,12 @@ public static class AuditLogger
             .MakeGenericMethod(navigationType)
             .Invoke(entity, [entity, navigationName]);
 
-        var auditEntryMethod = typeof(AuditLogger)
-            .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
+        var auditEntryMethod = typeof(AuditLogger<TContext>)
+            .GetMethods(BindingFlags.NonPublic | BindingFlags.Instance)
             .Single(m =>
                 m.Name == nameof(AuditEntry) &&
                 m.GetGenericArguments().Length == 1 &&
-                m.GetParameters().Length == 3);
+                m.GetParameters().Length == 2);
 
         if(navigationValue is null) return null;
 
@@ -112,23 +114,23 @@ public static class AuditLogger
             
             foreach(var item in (navigationValue as IEnumerable)!)
             {
-                var itemEntry = context.Entry(item);
+                var itemEntry = _context.Entry(item);
                 var itemType = item.GetType();
 
                 resultCollection.Add(
                     (ExpandoObject) auditEntryMethod  
                         .MakeGenericMethod(itemType)
-                        .Invoke(null, [itemEntry, item, context])!);
+                        .Invoke(this, [itemEntry, item])!);
             }
             
             return resultCollection;
         }
 
-        var navigationEntry = context.Entry(navigationValue!);
+        var navigationEntry = _context.Entry(navigationValue!);
 
         var result = (ExpandoObject) auditEntryMethod  
             .MakeGenericMethod(navigationType)
-            .Invoke(null, [navigationEntry, navigationValue, context])!;
+            .Invoke(this, [navigationEntry, navigationValue])!;
         
         return result;
     }
@@ -162,23 +164,4 @@ public static class AuditLogger
                 .WithNewValue(property.CurrentValue)
                 .WithOldValue(property.OriginalValue))
         : null;
-
-    private static object? GetPropertyValue(this object obj, string name)
-    {
-        if (obj == null) { return null; }
-
-        Type type = obj.GetType();
-        var info = type.GetProperty(name);
-        if (info == null) { return null; }
-
-        return info.GetValue(obj, null);
-    }
-
-    private static T? GetPropertyValue<T>(this object obj, string name)
-    {
-        var retval = GetPropertyValue(obj, name);
-        if (retval == null) { return default; }
-
-        return (T) retval;
-    }
 }

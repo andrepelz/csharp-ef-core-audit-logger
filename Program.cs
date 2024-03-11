@@ -34,7 +34,9 @@ entity.InnerEntities.First().Name = "ModifiedInner";
 
 entity.ValueObject = new("ValueObject2", 2);
 
-AuditLogger.CreateAuditLog(entity, db);
+var auditLogger = new AuditLogger<TestDbContext>(db);
+
+auditLogger.CreateAuditLog(entity);
 
 var changes = db.ChangeTracker.Entries();
 
