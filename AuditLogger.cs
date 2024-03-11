@@ -29,13 +29,12 @@ public class AuditLogger<TContext>(TContext context)
         if (entry.State == EntityState.Detached || entry.State == EntityState.Unchanged)
             return null;
 
-        var dataShapedObject = AuditEntry(entry, entity);
+        var dataShapedObject = AuditEntry(entry);
 
         return dataShapedObject;
     }
 
-    private ExpandoObject? AuditEntry<T>(EntityEntry entry, T entity)
-        where T : class
+    private ExpandoObject? AuditEntry(EntityEntry entry)
     {
         if(_visitedEntries.Any(e => e == entry.Entity)) return null;
 
