@@ -1,8 +1,6 @@
 using System.Collections;
 using System.Dynamic;
 using System.Reflection;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Auditing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -16,7 +14,7 @@ public class AuditLogger<TContext>(TContext context)
     private readonly ICollection<object> _visitedEntries = new List<object>();
     private readonly TContext _context = context;
 
-    public void CreateAuditLog<T>(T entity)
+    public ExpandoObject? CreateAuditLog<T>(T entity)
         where T : class
     {
         _visitedEntries.Clear();
@@ -24,17 +22,11 @@ public class AuditLogger<TContext>(TContext context)
         var entry = _context.Entry(entity);
 
         if (entry.State == EntityState.Detached || entry.State == EntityState.Unchanged)
-            return;
+            return null;
 
         var dataShapedObject = AuditEntry(entry, entity);
 
-        Console.WriteLine(JsonSerializer.Serialize(
-            dataShapedObject, 
-            new JsonSerializerOptions()
-            { 
-                WriteIndented = true,
-                Converters = { new JsonStringEnumConverter() },
-            }));
+        return dataShapedObject;
     }
 
     private ExpandoObject? AuditEntry<T>(EntityEntry entry, T entity)

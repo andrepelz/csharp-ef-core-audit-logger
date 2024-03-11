@@ -1,4 +1,6 @@
-﻿using DbContexts;
+﻿using System.Text.Json;
+using System.Text.Json.Serialization;
+using DbContexts;
 using Entities;
 using Experimental;
 
@@ -57,7 +59,15 @@ db.Add(newEntity);
 
 var auditLogger = new AuditLogger<TestDbContext>(db);
 
-auditLogger.CreateAuditLog(entity);
+var auditLog = auditLogger.CreateAuditLog(entity);
+
+Console.WriteLine(JsonSerializer.Serialize(
+    auditLog, 
+    new JsonSerializerOptions()
+    { 
+        WriteIndented = true,
+        Converters = { new JsonStringEnumConverter() },
+    }));
 
 var changes = db.ChangeTracker.Entries();
 
