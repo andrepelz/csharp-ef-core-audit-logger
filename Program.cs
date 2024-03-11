@@ -71,5 +71,5 @@ Console.WriteLine(JsonSerializer.Serialize(
 
 var changes = db.ChangeTracker.Entries();
 
-foreach(var change in changes)
-    Console.WriteLine(change);
+// foreach(var change in changes)
+//     Console.WriteLine(change);

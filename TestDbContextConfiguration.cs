@@ -10,16 +10,16 @@ internal sealed class TestEntityConfiguration : IEntityTypeConfiguration<TestEnt
     {
         builder.HasKey(e => e.Id);
 
-        builder.OwnsMany(e => e.InnerEntities);
+        builder.OwnsMany(
+            e => e.InnerEntities, 
+            builder => builder.HasKey(e => e.Id));
 
-        builder.OwnsOne(e => e.ValueObject);
+        builder.OwnsOne(
+            e => e.ValueObject,
+            builder => 
+            {
+                builder.Property<Guid>("Id");
+                builder.HasKey("Id");
+            });
     }
 }
-
-// internal sealed class InnerEntityConfiguration : IEntityTypeConfiguration<InnerEntity>
-// {
-//     public void Configure(EntityTypeBuilder<InnerEntity> builder)
-//     {
-//         builder.HasKey(e => e.Id);
-//     }
-// }

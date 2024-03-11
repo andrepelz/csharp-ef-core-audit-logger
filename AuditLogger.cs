@@ -5,6 +5,7 @@ using Auditing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Entities;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Experimental;
 
@@ -20,6 +21,10 @@ public class AuditLogger<TContext>(TContext context)
         _visitedEntries.Clear();
 
         var entry = _context.Entry(entity);
+
+        // entry.Metadata
+        //     .GetKeys()
+        //     .Where(key => key.IsPrimaryKey());
 
         if (entry.State == EntityState.Detached || entry.State == EntityState.Unchanged)
             return null;
@@ -64,19 +69,18 @@ public class AuditLogger<TContext>(TContext context)
         {
             var navigationName = navigation.Metadata.Name;
             var navigationType = navigation.Metadata.FieldInfo!.FieldType;
-            var navigationAudit = ResolveNavigationAudit(navigationType, entity);
+            var navigationAudit = ResolveNavigationAudit(navigationType, entry);
 
-            if (navigationAudit is not null)
+            if (navigationAudit is not null && navigationAudit.Any())
                 dataShapedObject.Add(navigationName, navigationAudit);
         }
 
         return (dataShapedObject as ExpandoObject)!;
     }
 
-    private IEnumerable<ExpandoObject>? ResolveNavigationAudit<T>(
+    private IEnumerable<ExpandoObject>? ResolveNavigationAudit(
         Type navigationType, 
-        T entity)
-        where T : class
+        EntityEntry parentEntry)
     {
         var getChangeTrackerEntriesMethod = typeof(ChangeTracker)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance)
@@ -101,11 +105,18 @@ public class AuditLogger<TContext>(TContext context)
             .MakeGenericMethod(navigationType)
             .Invoke(_context.ChangeTracker, null)!;
 
+        var parentPrimaryKey = parentEntry.Metadata
+            .GetKeys()
+            .Where(key => key.IsPrimaryKey())
+            .Select(pk => pk.Properties.First())
+            .Select(pk => parentEntry.Property(pk.Name).CurrentValue)
+            .First();
+
         entries = entries
             .Where(entry =>
                 entry.Metadata.GetForeignKeyProperties()
                     .Select(fk => entry.Property(fk.Name).CurrentValue)
-                    .Contains((entity as Entity)!.Id));
+                    .Contains(parentPrimaryKey));
 
         foreach(var item in entries)
         {
