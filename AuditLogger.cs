@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 using Auditing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
-using Extensions;
+using Entities;
 
 namespace Experimental;
 
@@ -72,7 +72,7 @@ public class AuditLogger<TContext>(TContext context)
         {
             var navigationName = navigation.Metadata.Name;
             var navigationType = navigation.Metadata.FieldInfo!.FieldType;
-            var navigationAudit = ResolveNavigationAudit(navigationName, navigationType, entity);
+            var navigationAudit = ResolveNavigationAudit(navigationType, entity);
 
             if (navigationAudit is not null)
                 dataShapedObject.Add(navigationName, navigationAudit);
@@ -81,22 +81,17 @@ public class AuditLogger<TContext>(TContext context)
         return (dataShapedObject as ExpandoObject)!;
     }
 
-    private object? ResolveNavigationAudit<T>(
-        string navigationName, 
+    private IEnumerable<ExpandoObject>? ResolveNavigationAudit<T>(
         Type navigationType, 
         T entity)
         where T : class
     {
-        var getPropertyValueMethod = typeof(ObjectExtensions)
-            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+        var getChangeTrackerEntriesMethod = typeof(ChangeTracker)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
             .Single(m =>
-                m.Name == nameof(ObjectExtensions.GetPropertyValue) &&
+                m.Name == nameof(ChangeTracker.Entries) &&
                 m.GetGenericArguments().Length == 1 &&
-                m.GetParameters().Length == 2);
-
-        var navigationValue = getPropertyValueMethod  
-            .MakeGenericMethod(navigationType)
-            .Invoke(entity, [entity, navigationName]);
+                m.GetParameters().Length == 0);
 
         var auditEntryMethod = typeof(AuditLogger<TContext>)
             .GetMethods(BindingFlags.NonPublic | BindingFlags.Instance)
@@ -105,34 +100,32 @@ public class AuditLogger<TContext>(TContext context)
                 m.GetGenericArguments().Length == 1 &&
                 m.GetParameters().Length == 2);
 
-        if(navigationValue is null) return null;
+        var resultCollection = new List<ExpandoObject>();
 
         if(typeof(IEnumerable).IsAssignableFrom(navigationType))
-        {
-            // lista de navegacao
-            var resultCollection = new List<ExpandoObject>();
-            
-            foreach(var item in (navigationValue as IEnumerable)!)
-            {
-                var itemEntry = _context.Entry(item);
-                var itemType = item.GetType();
+            navigationType = navigationType.GetGenericArguments().First();
 
-                resultCollection.Add(
-                    (ExpandoObject) auditEntryMethod  
-                        .MakeGenericMethod(itemType)
-                        .Invoke(this, [itemEntry, item])!);
-            }
-            
-            return resultCollection;
-        }
-
-        var navigationEntry = _context.Entry(navigationValue!);
-
-        var result = (ExpandoObject) auditEntryMethod  
+        var entries = (IEnumerable<EntityEntry>) getChangeTrackerEntriesMethod  
             .MakeGenericMethod(navigationType)
-            .Invoke(this, [navigationEntry, navigationValue])!;
+            .Invoke(_context.ChangeTracker, null)!;
+
+        entries = entries
+            .Where(entry =>
+                entry.Metadata.GetForeignKeyProperties()
+                    .Select(fk => entry.Property(fk.Name).CurrentValue)
+                    .Contains((entity as Entity)!.Id));
+
+        foreach(var item in entries)
+        {
+            var itemType = item.Entity.GetType();
+
+            resultCollection.Add(
+                (ExpandoObject) auditEntryMethod  
+                    .MakeGenericMethod(itemType)
+                    .Invoke(this, [item, item.Entity])!);
+        }
         
-        return result;
+        return resultCollection;
     }
 
     private static Audit AuditEntryAdded(PropertyEntry property)

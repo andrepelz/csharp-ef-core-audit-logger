@@ -34,6 +34,27 @@ entity.InnerEntities.First().Name = "ModifiedInner";
 
 entity.ValueObject = new("ValueObject2", 2);
 
+var newEntity = new TestEntity()
+{
+    Name = "New",
+    InnerEntities = new List<InnerEntity>
+    {
+        new()
+        {
+            Name = "NewInner1",
+            Quantity = 1
+        },
+        new()
+        {
+            Name = "NewInner2",
+            Quantity = 2
+        }
+    },
+    ValueObject = new("NewValueObject1", 1)
+};
+
+db.Add(newEntity);
+
 var auditLogger = new AuditLogger<TestDbContext>(db);
 
 auditLogger.CreateAuditLog(entity);
