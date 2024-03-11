@@ -42,6 +42,14 @@ public class AuditLogger<TContext>(TContext context)
         
         var dataShapedObject = new ExpandoObject() as IDictionary<string, object?>;
 
+        dataShapedObject.Add("AuditState", entry.State switch
+        {
+                EntityState.Added => Audit.State.Added,
+                EntityState.Deleted => Audit.State.Deleted,
+                EntityState.Modified =>Audit.State.Modified,
+                _ => null,
+        });
+
         foreach(var property in entry.Properties)
         {
             string propertyName = property.Metadata.Name;
@@ -55,7 +63,7 @@ public class AuditLogger<TContext>(TContext context)
             var propertyAudit = entry.State switch
             {
                 EntityState.Added => AuditEntryAdded(property),
-                EntityState.Deleted => AuditEntryDeleted(property),
+                EntityState.Deleted => null,
                 EntityState.Modified => AuditEntryModified(property),
                 _ => null,
             };
@@ -88,13 +96,6 @@ public class AuditLogger<TContext>(TContext context)
                 m.GetGenericArguments().Length == 1 &&
                 m.GetParameters().Length == 0);
 
-        var auditEntryMethod = typeof(AuditLogger<TContext>)
-            .GetMethods(BindingFlags.NonPublic | BindingFlags.Instance)
-            .Single(m =>
-                m.Name == nameof(AuditEntry) &&
-                m.GetGenericArguments().Length == 1 &&
-                m.GetParameters().Length == 2);
-
         var resultCollection = new List<ExpandoObject>();
 
         if(typeof(IEnumerable).IsAssignableFrom(navigationType))
@@ -119,12 +120,8 @@ public class AuditLogger<TContext>(TContext context)
 
         foreach(var item in entries)
         {
-            var itemType = item.Entity.GetType();
-
             resultCollection.Add(
-                (ExpandoObject) auditEntryMethod  
-                    .MakeGenericMethod(itemType)
-                    .Invoke(this, [item, item.Entity])!);
+                AuditEntry(item)!);
         }
         
         return resultCollection;
