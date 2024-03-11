@@ -130,33 +130,14 @@ public class AuditLogger<TContext>(TContext context)
         return resultCollection;
     }
 
-    private static Audit AuditEntryAdded(PropertyEntry property)
-        => Audit.EntryAdded(property, builder => 
-            builder
-                .CreatedBy(
-                    null == null // CreatedBy property is not implemented
-                    ? Guid.NewGuid()
-                    : Guid.Empty)
-                .WithNewValue(property.CurrentValue));
+    private Audit AuditEntryAdded(PropertyEntry property)
+        => Audit.EntryAdded(property);
 
-    private static Audit AuditEntryDeleted(PropertyEntry property)
-        => Audit.EntryDeleted(property, builder => 
-            builder
-                .LastModifiedBy(
-                    null == null // LastModifiedBy property is not implemented
-                    ? Guid.NewGuid()
-                    : Guid.Empty)
-                .WithOldValue(property.OriginalValue));
+    private Audit AuditEntryDeleted(PropertyEntry property)
+        => Audit.EntryDeleted(property);
 
-    private static Audit? AuditEntryModified(PropertyEntry property)
+    private Audit? AuditEntryModified(PropertyEntry property)
         => property.IsModified
-        ? Audit.EntryModified(property, builder =>  
-            builder
-                .LastModifiedBy(
-                    null == null // LastModifiedBy property is not implemented
-                    ? Guid.NewGuid()
-                    : Guid.Empty)
-                .WithNewValue(property.CurrentValue)
-                .WithOldValue(property.OriginalValue))
+        ? Audit.EntryModified(property)
         : null;
 }

@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+
 namespace Auditing;
 
 public class Audit
@@ -9,37 +11,53 @@ public class Audit
 
     private Audit() { }
 
-    public static Audit EntryAdded(object entry, Func<AuditBuilder, Audit> auditBuilderOptions)
+    public static Audit EntryAdded(PropertyEntry property)
     {
-        var auditBuilder = new AuditBuilder(
+        var builder = new AuditBuilder(
             new Audit()
             {
                 AuditState = State.Added
             });
 
-        return auditBuilderOptions(auditBuilder);
+        return builder
+            .CreatedBy(
+                null == null // CreatedBy property is not implemented
+                ? Guid.NewGuid()
+                : Guid.Empty)
+            .WithNewValue(property.CurrentValue);
     }
 
-    public static Audit EntryDeleted(object entry, Func<AuditBuilder, Audit> auditBuilderOptions)
+    public static Audit EntryDeleted(PropertyEntry property)
     {
-        var auditBuilder = new AuditBuilder(
+        var builder = new AuditBuilder(
             new Audit()
             {
                 AuditState = State.Deleted
             });
 
-        return auditBuilderOptions(auditBuilder);
+        return builder
+            .CreatedBy(
+                null == null // CreatedBy property is not implemented
+                ? Guid.NewGuid()
+                : Guid.Empty)
+            .WithNewValue(property.CurrentValue);
     }
 
-    public static Audit EntryModified(object entry, Func<AuditBuilder, Audit> auditBuilderOptions)
+    public static Audit EntryModified(PropertyEntry property)
     {
-        var auditBuilder = new AuditBuilder(
+        var builder = new AuditBuilder(
             new Audit()
             {
                 AuditState = State.Modified
             });
 
-        return auditBuilderOptions(auditBuilder);
+        return builder
+            .LastModifiedBy(
+                null == null // LastModifiedBy property is not implemented
+                ? Guid.NewGuid()
+                : Guid.Empty)
+            .WithNewValue(property.CurrentValue)
+            .WithOldValue(property.OriginalValue);
     }
 
     public enum State { Added, Deleted, Modified }
