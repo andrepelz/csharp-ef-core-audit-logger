@@ -6,6 +6,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Entities;
 using Microsoft.EntityFrameworkCore.Metadata;
+using System.Diagnostics.CodeAnalysis;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
+using System.Linq;
 
 namespace Experimental;
 
@@ -72,11 +75,12 @@ public class AuditLogger<TContext>(TContext context)
                 dataShapedObject.Add(propertyName, propertyAudit);
         }
 
-        foreach(var navigation in entry.Navigations)
+        foreach(var navigation in entry.Metadata.GetNavigations())
         {
-            var navigationName = navigation.Metadata.Name;
-            var navigationType = navigation.Metadata.FieldInfo!.FieldType;
-            var navigationAudit = ResolveNavigationAudit(navigationType, entry);
+            var navigationName = navigation.Name;
+            var navigationIsOwnership = navigation.ForeignKey.IsOwnership;
+            var navigationType = navigation.FieldInfo!.FieldType;
+            var navigationAudit = ResolveNavigationAudit(navigationType, navigationIsOwnership, entry);
 
             if (navigationAudit is not null && navigationAudit.Any())
                 dataShapedObject.Add(navigationName, navigationAudit);
@@ -86,7 +90,8 @@ public class AuditLogger<TContext>(TContext context)
     }
 
     private IEnumerable<ExpandoObject>? ResolveNavigationAudit(
-        Type navigationType, 
+        Type navigationType,
+        bool navigationIsOwnership,
         EntityEntry parentEntry)
     {
         var getChangeTrackerEntriesMethod = typeof(ChangeTracker)
@@ -118,13 +123,47 @@ public class AuditLogger<TContext>(TContext context)
                     .Select(fk => entry.Property(fk.Name).CurrentValue)
                     .Contains(parentPrimaryKey));
 
-        foreach(var item in entries)
+        if(navigationIsOwnership)
         {
-            resultCollection.Add(
-                AuditEntry(item)!);
+            foreach (var item in entries)
+            {
+                resultCollection.Add(
+                    AuditEntry(item)!);
+            }
         }
+        else
+        {
+            foreach (var item in entries)
+            {
+                resultCollection.Add(
+                    AuditEntryM2M(item)!);
+            }
+        }
+
+        
         
         return resultCollection;
+    }
+
+    private ExpandoObject? AuditEntryM2M(EntityEntry entry)
+    {
+        if (_visitedEntries.Any(e => e == entry.Entity)) return null;
+
+        _visitedEntries.Add(entry.Entity);
+
+        var dataShapedObject = new ExpandoObject() as IDictionary<string, object?>;
+
+        dataShapedObject.Add("AuditState", entry.State switch
+        {
+            EntityState.Added => Audit.State.Added,
+            EntityState.Deleted => Audit.State.Deleted,
+            EntityState.Modified => Audit.State.Modified,
+            _ => null,
+        });
+
+        dataShapedObject.Add(entry.Properties.Where(p => p.Metadata.IsPrimaryKey()).Select(p => new KeyValuePair<string, object>(p.Metadata.Name, p.CurrentValue)).FirstOrDefault()!);
+
+        return (ExpandoObject)dataShapedObject;
     }
 
     private Audit AuditEntryAdded(PropertyEntry property)
