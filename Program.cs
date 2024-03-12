@@ -22,7 +22,18 @@ var entity = new TestEntity()
             Quantity = 2
         }
     },
-    ValueObject = new("ValueObject1", 1)
+    ValueObject = new("ValueObject1", 1),
+    OtherAggregateRoots = new List<OtherAggregateRoot>
+    {
+        new()
+        {
+            Name = "Aggregate1"
+        },
+        new()
+        {
+            Name = "Aggregate2"
+        },
+    }
 };
 
 db.Add(entity);
@@ -30,11 +41,12 @@ db.SaveChanges();
 
 entity.Name = "Changed";
 
-entity.InnerEntities.Add(new() { Name = "Inner3", Quantity = 3 });
-entity.InnerEntities.Remove(entity.InnerEntities.First());
-entity.InnerEntities.First().Name = "ModifiedInner";
+// entity.InnerEntities.Add(new() { Name = "Inner3", Quantity = 3 });
+// entity.InnerEntities.Remove(entity.InnerEntities.First());
+// entity.InnerEntities.First().Name = "ModifiedInner";
+entity.OtherAggregateRoots.First().Name = "Modified";
 
-entity.ValueObject = new("ValueObject2", 2);
+// entity.ValueObject = new("ValueObject2", 2);
 
 var newEntity = new TestEntity()
 {

@@ -5,7 +5,7 @@ using Auditing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Entities;
-using Microsoft.EntityFrameworkCore.Metadata;
+using Extensions;
 
 namespace Experimental;
 
@@ -16,18 +16,11 @@ public class AuditLogger<TContext>(TContext context)
     private readonly TContext _context = context;
 
     public ExpandoObject? CreateAuditLog<T>(T entity)
-        where T : class
+        where T : IAggregateRoot
     {
         _visitedEntries.Clear();
 
         var entry = _context.Entry(entity);
-
-        // entry.Metadata
-        //     .GetKeys()
-        //     .Where(key => key.IsPrimaryKey());
-
-        if (entry.State == EntityState.Detached || entry.State == EntityState.Unchanged)
-            return null;
 
         var dataShapedObject = AuditEntry(entry);
 
@@ -37,6 +30,7 @@ public class AuditLogger<TContext>(TContext context)
     private ExpandoObject? AuditEntry(EntityEntry entry)
     {
         if(_visitedEntries.Any(e => e == entry.Entity)) return null;
+        if(entry.State == EntityState.Detached || entry.State == EntityState.Unchanged) return null;
 
         _visitedEntries.Add(entry.Entity);
         
@@ -44,29 +38,17 @@ public class AuditLogger<TContext>(TContext context)
 
         dataShapedObject.Add("AuditState", entry.State switch
         {
-                EntityState.Added => Audit.State.Added,
-                EntityState.Deleted => Audit.State.Deleted,
-                EntityState.Modified =>Audit.State.Modified,
-                _ => null,
+            EntityState.Added => Audit.State.Added,
+            EntityState.Deleted => Audit.State.Deleted,
+            EntityState.Modified =>Audit.State.Modified,
+            _ => null,
         });
 
         foreach(var property in entry.Properties)
         {
             string propertyName = property.Metadata.Name;
 
-            if (property.Metadata.IsPrimaryKey())
-            {
-                dataShapedObject.Add(propertyName, property.CurrentValue);
-                continue;
-            }
-
-            var propertyAudit = entry.State switch
-            {
-                EntityState.Added => AuditEntryAdded(property),
-                EntityState.Deleted => null,
-                EntityState.Modified => AuditEntryModified(property),
-                _ => null,
-            };
+            var propertyAudit = AuditProperty(property, entry);
 
             if (propertyAudit is not null)
                 dataShapedObject.Add(propertyName, propertyAudit);
@@ -76,41 +58,48 @@ public class AuditLogger<TContext>(TContext context)
         {
             var navigationName = navigation.Metadata.Name;
             var navigationType = navigation.Metadata.FieldInfo!.FieldType;
-            var navigationAudit = ResolveNavigationAudit(navigationType, entry);
+            var navigationAudit = AuditNavigation(navigationType, entry);
 
-            if (navigationAudit is not null && navigationAudit.Any())
+            if (navigationAudit is not null)
                 dataShapedObject.Add(navigationName, navigationAudit);
         }
 
         return (dataShapedObject as ExpandoObject)!;
     }
 
-    private IEnumerable<ExpandoObject>? ResolveNavigationAudit(
+    private object? AuditProperty(PropertyEntry property, EntityEntry entry)
+    {
+        if (property.Metadata.IsPrimaryKey())
+            return property.CurrentValue;
+
+        var propertyAudit = entry.State switch
+        {
+            EntityState.Added => AuditEntryAdded(property),
+            EntityState.Deleted => null,
+            EntityState.Modified => AuditEntryModified(property),
+            _ => null,
+        };
+
+        return propertyAudit;
+    }
+
+    private IEnumerable<ExpandoObject>? AuditNavigation(
         Type navigationType, 
         EntityEntry parentEntry)
     {
-        var getChangeTrackerEntriesMethod = typeof(ChangeTracker)
-            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
-            .Single(m =>
-                m.Name == nameof(ChangeTracker.Entries) &&
-                m.GetGenericArguments().Length == 1 &&
-                m.GetParameters().Length == 0);
+        // if(typeof(IAggregateRoot).IsAssignableFrom(navigationType)) return null;
 
         var resultCollection = new List<ExpandoObject>();
 
         if(typeof(IEnumerable).IsAssignableFrom(navigationType))
             navigationType = navigationType.GetGenericArguments().First();
 
+        var getChangeTrackerEntriesMethod = BuildChangeTrackerEntriesMethod(navigationType);
+
         var entries = (IEnumerable<EntityEntry>) getChangeTrackerEntriesMethod  
-            .MakeGenericMethod(navigationType)
             .Invoke(_context.ChangeTracker, null)!;
 
-        var parentPrimaryKey = parentEntry.Metadata
-            .GetKeys()
-            .Where(key => key.IsPrimaryKey())
-            .Select(pk => pk.Properties.First())
-            .Select(pk => parentEntry.Property(pk.Name).CurrentValue)
-            .First();
+        var parentPrimaryKey = GetEntryPrimaryKey(parentEntry);
 
         entries = entries
             .Where(entry =>
@@ -120,20 +109,36 @@ public class AuditLogger<TContext>(TContext context)
 
         foreach(var item in entries)
         {
-            resultCollection.Add(
-                AuditEntry(item)!);
+            var itemAudit = AuditEntry(item);
+
+            if(itemAudit is not null)
+                resultCollection.Add(itemAudit);
         }
         
-        return resultCollection;
+        return resultCollection.Count > 0 ? resultCollection : null;
     }
 
-    private Audit AuditEntryAdded(PropertyEntry property)
+    private static MethodInfo BuildChangeTrackerEntriesMethod(Type genericType)
+        => typeof(ChangeTracker)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Single(m =>
+                m.Name == nameof(ChangeTracker.Entries) &&
+                m.GetGenericArguments().Length == 1 &&
+                m.GetParameters().Length == 0)
+            .MakeGenericMethod(genericType);
+
+    private static object? GetEntryPrimaryKey(EntityEntry entry)
+        => entry.KeyValuesOf()
+            .Where(pair => pair.Key == "Id")
+            .First().Value;
+
+    private static Audit AuditEntryAdded(PropertyEntry property)
         => Audit.EntryAdded(property);
 
-    private Audit AuditEntryDeleted(PropertyEntry property)
+    private static Audit AuditEntryDeleted(PropertyEntry property)
         => Audit.EntryDeleted(property);
 
-    private Audit? AuditEntryModified(PropertyEntry property)
+    private static Audit? AuditEntryModified(PropertyEntry property)
         => property.IsModified
         ? Audit.EntryModified(property)
         : null;

@@ -11,8 +11,7 @@ internal sealed class TestEntityConfiguration : IEntityTypeConfiguration<TestEnt
         builder.HasKey(e => e.Id);
 
         builder.OwnsMany(
-            e => e.InnerEntities, 
-            builder => builder.HasKey(e => e.Id));
+            e => e.InnerEntities);
 
         builder.OwnsOne(
             e => e.ValueObject,

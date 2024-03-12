@@ -1,10 +1,11 @@
 namespace Entities;
 
-public sealed class TestEntity : Entity
+public sealed class TestEntity : Entity, IAggregateRoot
 {
     public string Name { get; set; } = string.Empty;
     public ICollection<InnerEntity> InnerEntities { get; set; } = new List<InnerEntity>();
     public TestValueObject ValueObject { get; set; } = default!;
+    public IEnumerable<OtherAggregateRoot> OtherAggregateRoots { get ; set; } = new List<OtherAggregateRoot>();
 }
 
 public sealed class InnerEntity : Entity
@@ -21,3 +22,5 @@ public abstract class Entity
 {
     public Guid Id { get; protected init; } = Guid.NewGuid();
 }
+
+public interface IAggregateRoot { }
