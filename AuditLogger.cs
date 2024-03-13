@@ -6,10 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Entities;
 using Extensions;
-using Microsoft.EntityFrameworkCore.Metadata;
-using System.Diagnostics.CodeAnalysis;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;
-using System.Linq;
 
 namespace Experimental;
 
@@ -18,6 +15,7 @@ public class AuditLogger<TContext>(TContext context)
 {
     private readonly ICollection<object> _visitedEntries = new List<object>();
     private readonly TContext _context = context;
+
 
     public ExpandoObject? CreateAuditLog<T>(T entity)
         where T : IAggregateRoot
@@ -31,7 +29,8 @@ public class AuditLogger<TContext>(TContext context)
         return dataShapedObject;
     }
 
-    private ExpandoObject? AuditEntry(EntityEntry entry)
+
+    private ExpandoObject? AuditEntry(EntityEntry entry, bool nestedAggregateRoot = false)
     {
         if(_visitedEntries.Any(e => e == entry.Entity)) return null;
         if(entry.State == EntityState.Detached || entry.State == EntityState.Unchanged) return null;
@@ -41,6 +40,14 @@ public class AuditLogger<TContext>(TContext context)
         var dataShapedObject = new ExpandoObject() as IDictionary<string, object?>;
 
         dataShapedObject.Add("AuditState", ResolveAuditState(entry.State));
+
+        if(nestedAggregateRoot)
+        {
+            foreach(var key in GetEntryCompositePrimaryKey(entry))
+                dataShapedObject.Add(key);
+                
+            return (ExpandoObject) dataShapedObject;
+        }
 
         foreach(var property in entry.Properties)
         {
@@ -66,7 +73,8 @@ public class AuditLogger<TContext>(TContext context)
         return (dataShapedObject as ExpandoObject)!;
     }
 
-    private object? AuditProperty(PropertyEntry property, EntityEntry entry)
+
+    private static object? AuditProperty(PropertyEntry property, EntityEntry entry)
     {
         if (property.Metadata.IsPrimaryKey())
             return property.CurrentValue;
@@ -103,13 +111,11 @@ public class AuditLogger<TContext>(TContext context)
             .Where(entry =>
                 entry.Metadata.GetForeignKeyProperties()
                     .Select(fk => entry.Property(fk.Name).CurrentValue)
-                    .Contains(parentPrimaryKey));
+                    .Contains(parentPrimaryKey.Value));
 
         foreach (var item in entries)
         {
-            var itemAudit = navigationIsOwnership
-                ? AuditEntry(item)
-                : AuditEntryM2M(item);
+            var itemAudit = AuditEntry(item, !navigationIsOwnership); // navigation not being ownership means it is a nested aggregate root
 
             if(itemAudit is not null)
                 resultCollection.Add(itemAudit);
@@ -118,19 +124,14 @@ public class AuditLogger<TContext>(TContext context)
         return resultCollection.Count > 0 ? resultCollection : null;
     }
 
-    private static MethodInfo BuildChangeTrackerEntriesMethod(Type genericType)
-        => typeof(ChangeTracker)
-            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
-            .Single(m =>
-                m.Name == nameof(ChangeTracker.Entries) &&
-                m.GetGenericArguments().Length == 1 &&
-                m.GetParameters().Length == 0)
-            .MakeGenericMethod(genericType);
 
-    private static object? GetEntryPrimaryKey(EntityEntry entry)
+    private static KeyValuePair<string, object?> GetEntryPrimaryKey(EntityEntry entry)
         => entry.KeyValuesOf()
             .Where(pair => pair.Key == "Id")
-            .First().Value;
+            .First();
+
+    private static IEnumerable<KeyValuePair<string, object?>> GetEntryCompositePrimaryKey(EntityEntry entry)
+        => entry.KeyValuesOf();
 
     private static Audit.State? ResolveAuditState(EntityState state)
         => state switch
@@ -141,23 +142,15 @@ public class AuditLogger<TContext>(TContext context)
             _ => null,
         };
 
-    private ExpandoObject? AuditEntryM2M(EntityEntry entry)
-    {
-        if (_visitedEntries.Any(e => e == entry.Entity)) return null;
+    private static MethodInfo BuildChangeTrackerEntriesMethod(Type genericType)
+        => typeof(ChangeTracker)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Single(m =>
+                m.Name == nameof(ChangeTracker.Entries) &&
+                m.GetGenericArguments().Length == 1 &&
+                m.GetParameters().Length == 0)
+            .MakeGenericMethod(genericType);
 
-        _visitedEntries.Add(entry.Entity);
-
-        var dataShapedObject = new ExpandoObject() as IDictionary<string, object?>;
-
-        dataShapedObject.Add("AuditState", ResolveAuditState(entry.State));
-
-        dataShapedObject
-            .Add(entry.Properties
-                .Where(p => p.Metadata.IsPrimaryKey())
-                .Select(p => new KeyValuePair<string, object?>(p.Metadata.Name, p.CurrentValue)).FirstOrDefault()!);
-
-        return (ExpandoObject)dataShapedObject;
-    }
 
     private static Audit AuditEntryAdded(PropertyEntry property)
         => Audit.EntryAdded(property);

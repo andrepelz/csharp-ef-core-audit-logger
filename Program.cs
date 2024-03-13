@@ -33,13 +33,17 @@ var entity1 = new TestEntity()
         }
     },
     ValueObject = new("ValueObject1", 1),
-    OtherEntities = [new TestEntityOtherEntity(otherEntities[1])]
+    OtherEntities = [ otherEntities[1] ]
 };
 
 db.Add(entity1);
 db.SaveChanges();
 
-var entity = db.TestEntities.Include(t => t.OtherEntities).ThenInclude(o => o.OtherEntity).FirstOrDefault(e => e.Id == entity1.Id);
+var entity = db.TestEntities
+    .Include(t => t.OtherEntities)
+    .Include(t => t.TestEntityOtherEntities)
+        .ThenInclude(o => o.OtherEntity)
+    .FirstOrDefault(e => e.Id == entity1.Id);
 
 entity!.Name = "Changed";
 
@@ -49,9 +53,9 @@ entity.InnerEntities.First().Name = "ModifiedInner";
 
 entity.ValueObject = new("ValueObject2", 2);
 
-entity.OtherEntities.Remove(entity.OtherEntities.Where(t => t.OtherEntityId == otherEntities[1].Id).FirstOrDefault()!);
-entity.OtherEntities.Add(new TestEntityOtherEntity(otherEntities[2]));
-entity.OtherEntities.First().OtherEntity.Name = "ModifiedOther";
+entity.TestEntityOtherEntities.Remove(entity.TestEntityOtherEntities.Where(t => t.OtherEntityId == otherEntities[1].Id).FirstOrDefault()!);
+entity.TestEntityOtherEntities.Add(new TestEntityOtherEntity(otherEntities[2]));
+entity.OtherEntities.First().Name = "ModifiedOther";
 
 var newEntity = new TestEntity()
 {

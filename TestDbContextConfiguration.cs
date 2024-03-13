@@ -21,6 +21,9 @@ internal sealed class TestEntityConfiguration : IEntityTypeConfiguration<TestEnt
                 builder.HasKey("Id");
             });
 
-        builder.HasMany(t => t.OtherEntities).WithOne(o => o.TestEntity).HasForeignKey(o => o.TestEntityId);
+        builder
+            .HasMany(t => t.OtherEntities)
+            .WithMany(o => o.TestEntities)
+            .UsingEntity(typeof(TestEntityOtherEntity));
     }
 }

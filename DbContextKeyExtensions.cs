@@ -11,7 +11,7 @@ public static class DbContextKeyExtensions
 {
     private static readonly ConcurrentDictionary<Type, IProperty[]> KeyPropertiesByEntityType = new();
 
-    public static IEnumerable<KeyValuePair<string, object>> KeyValuesOf(this EntityEntry entry)
+    public static IEnumerable<KeyValuePair<string, object?>> KeyValuesOf(this EntityEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
 
@@ -19,7 +19,7 @@ public static class DbContextKeyExtensions
 
         foreach (var keyProperty in keyProperties)
         {
-            yield return new KeyValuePair<string, object>(keyProperty.Name, entry.Property(keyProperty.Name).CurrentValue!);
+            yield return new KeyValuePair<string, object?>(keyProperty.Name, entry.Property(keyProperty.Name).CurrentValue);
         }
     }
 

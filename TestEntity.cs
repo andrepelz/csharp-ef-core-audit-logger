@@ -5,7 +5,8 @@ public sealed class TestEntity : Entity, IAggregateRoot
     public string Name { get; set; } = string.Empty;
     public ICollection<InnerEntity> InnerEntities { get; set; } = new List<InnerEntity>();
     public TestValueObject ValueObject { get; set; } = default!;
-    public ICollection<TestEntityOtherEntity> OtherEntities { get; set; } = [];
+    public ICollection<OtherEntity> OtherEntities { get; set; } = [];
+    public ICollection<TestEntityOtherEntity> TestEntityOtherEntities { get; set; } = [];
 }
 
 public sealed class InnerEntity : Entity
@@ -34,10 +35,11 @@ public class TestEntityOtherEntity
     }
 }
 
-public class OtherEntity : Entity
+public class OtherEntity : Entity, IAggregateRoot
 {
     public string Name { get; set; } = string.Empty;
-    public ICollection<TestEntityOtherEntity> TestEntities { get; set; } = [];
+    public ICollection<TestEntity> TestEntities { get; set; } = [];
+    public ICollection<TestEntityOtherEntity> TestEntityOtherEntities { get; set; } = [];
 }
 
 public abstract class Entity
