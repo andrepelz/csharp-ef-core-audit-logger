@@ -45,8 +45,11 @@ public class AuditLogger<TContext>(TContext context)
         {
             foreach(var key in GetEntryCompositePrimaryKey(entry))
                 dataShapedObject.Add(key);
-                
-            return (ExpandoObject) dataShapedObject;
+
+            // only tracks new and severed references to aggregate roots (Added & Removed)
+            return ((Audit.State) dataShapedObject["AuditState"]!) != Audit.State.Modified
+                ? (ExpandoObject) dataShapedObject
+                : null;
         }
 
         foreach(var property in entry.Properties)
