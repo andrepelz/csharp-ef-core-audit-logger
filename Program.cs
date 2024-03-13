@@ -3,10 +3,20 @@ using System.Text.Json.Serialization;
 using DbContexts;
 using Entities;
 using Experimental;
+using Microsoft.EntityFrameworkCore;
 
 using var db = new TestDbContext();
 
-var entity = new TestEntity()
+var otherEntities = new List<OtherEntity>()
+{
+    new OtherEntity{ Name = "Other1" },
+    new OtherEntity{ Name = "Other2" },
+    new OtherEntity{ Name = "Other3" }
+};
+
+db.AddRange(otherEntities);
+
+var entity1 = new TestEntity()
 {
     Name = "Initial",
     InnerEntities = new List<InnerEntity>
@@ -23,30 +33,25 @@ var entity = new TestEntity()
         }
     },
     ValueObject = new("ValueObject1", 1),
-    OtherAggregateRoots = new List<OtherAggregateRoot>
-    {
-        new()
-        {
-            Name = "Aggregate1"
-        },
-        new()
-        {
-            Name = "Aggregate2"
-        },
-    }
+    OtherEntities = [new TestEntityOtherEntity(otherEntities[1])]
 };
 
-db.Add(entity);
+db.Add(entity1);
 db.SaveChanges();
 
-entity.Name = "Changed";
+var entity = db.TestEntities.Include(t => t.OtherEntities).ThenInclude(o => o.OtherEntity).FirstOrDefault(e => e.Id == entity1.Id);
 
-// entity.InnerEntities.Add(new() { Name = "Inner3", Quantity = 3 });
-// entity.InnerEntities.Remove(entity.InnerEntities.First());
-// entity.InnerEntities.First().Name = "ModifiedInner";
-entity.OtherAggregateRoots.First().Name = "Modified";
+entity!.Name = "Changed";
 
-// entity.ValueObject = new("ValueObject2", 2);
+entity.InnerEntities.Add(new() { Name = "Inner3", Quantity = 3 });
+entity.InnerEntities.Remove(entity.InnerEntities.First());
+entity.InnerEntities.First().Name = "ModifiedInner";
+
+entity.ValueObject = new("ValueObject2", 2);
+
+entity.OtherEntities.Remove(entity.OtherEntities.Where(t => t.OtherEntityId == otherEntities[1].Id).FirstOrDefault()!);
+entity.OtherEntities.Add(new TestEntityOtherEntity(otherEntities[2]));
+entity.OtherEntities.First().OtherEntity.Name = "ModifiedOther";
 
 var newEntity = new TestEntity()
 {
@@ -67,21 +72,16 @@ var newEntity = new TestEntity()
     ValueObject = new("NewValueObject1", 1)
 };
 
-db.Add(newEntity);
-
 var auditLogger = new AuditLogger<TestDbContext>(db);
 
 var auditLog = auditLogger.CreateAuditLog(entity);
 
 Console.WriteLine(JsonSerializer.Serialize(
-    auditLog, 
+    auditLog,
     new JsonSerializerOptions()
-    { 
+    {
         WriteIndented = true,
         Converters = { new JsonStringEnumConverter() },
     }));
 
 var changes = db.ChangeTracker.Entries();
-
-// foreach(var change in changes)
-//     Console.WriteLine(change);

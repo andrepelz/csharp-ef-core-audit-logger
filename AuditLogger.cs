@@ -6,6 +6,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Entities;
 using Extensions;
+using Microsoft.EntityFrameworkCore.Metadata;
+using System.Diagnostics.CodeAnalysis;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
+using System.Linq;
 
 namespace Experimental;
 
@@ -36,13 +40,7 @@ public class AuditLogger<TContext>(TContext context)
         
         var dataShapedObject = new ExpandoObject() as IDictionary<string, object?>;
 
-        dataShapedObject.Add("AuditState", entry.State switch
-        {
-            EntityState.Added => Audit.State.Added,
-            EntityState.Deleted => Audit.State.Deleted,
-            EntityState.Modified =>Audit.State.Modified,
-            _ => null,
-        });
+        dataShapedObject.Add("AuditState", ResolveAuditState(entry.State));
 
         foreach(var property in entry.Properties)
         {
@@ -54,11 +52,12 @@ public class AuditLogger<TContext>(TContext context)
                 dataShapedObject.Add(propertyName, propertyAudit);
         }
 
-        foreach(var navigation in entry.Navigations)
+        foreach(var navigation in entry.Metadata.GetNavigations())
         {
-            var navigationName = navigation.Metadata.Name;
-            var navigationType = navigation.Metadata.FieldInfo!.FieldType;
-            var navigationAudit = AuditNavigation(navigationType, entry);
+            var navigationName = navigation.Name;
+            var navigationIsOwnership = navigation.ForeignKey.IsOwnership;
+            var navigationType = navigation.FieldInfo!.FieldType;
+            var navigationAudit = AuditNavigation(navigationType, navigationIsOwnership, entry);
 
             if (navigationAudit is not null)
                 dataShapedObject.Add(navigationName, navigationAudit);
@@ -85,10 +84,9 @@ public class AuditLogger<TContext>(TContext context)
 
     private IEnumerable<ExpandoObject>? AuditNavigation(
         Type navigationType, 
+        bool navigationIsOwnership,
         EntityEntry parentEntry)
     {
-        // if(typeof(IAggregateRoot).IsAssignableFrom(navigationType)) return null;
-
         var resultCollection = new List<ExpandoObject>();
 
         if(typeof(IEnumerable).IsAssignableFrom(navigationType))
@@ -107,14 +105,16 @@ public class AuditLogger<TContext>(TContext context)
                     .Select(fk => entry.Property(fk.Name).CurrentValue)
                     .Contains(parentPrimaryKey));
 
-        foreach(var item in entries)
+        foreach (var item in entries)
         {
-            var itemAudit = AuditEntry(item);
+            var itemAudit = navigationIsOwnership
+                ? AuditEntry(item)
+                : AuditEntryM2M(item);
 
             if(itemAudit is not null)
                 resultCollection.Add(itemAudit);
         }
-        
+
         return resultCollection.Count > 0 ? resultCollection : null;
     }
 
@@ -131,6 +131,33 @@ public class AuditLogger<TContext>(TContext context)
         => entry.KeyValuesOf()
             .Where(pair => pair.Key == "Id")
             .First().Value;
+
+    private static Audit.State? ResolveAuditState(EntityState state)
+        => state switch
+        {
+            EntityState.Added => Audit.State.Added,
+            EntityState.Deleted => Audit.State.Deleted,
+            EntityState.Modified => Audit.State.Modified,
+            _ => null,
+        };
+
+    private ExpandoObject? AuditEntryM2M(EntityEntry entry)
+    {
+        if (_visitedEntries.Any(e => e == entry.Entity)) return null;
+
+        _visitedEntries.Add(entry.Entity);
+
+        var dataShapedObject = new ExpandoObject() as IDictionary<string, object?>;
+
+        dataShapedObject.Add("AuditState", ResolveAuditState(entry.State));
+
+        dataShapedObject
+            .Add(entry.Properties
+                .Where(p => p.Metadata.IsPrimaryKey())
+                .Select(p => new KeyValuePair<string, object?>(p.Metadata.Name, p.CurrentValue)).FirstOrDefault()!);
+
+        return (ExpandoObject)dataShapedObject;
+    }
 
     private static Audit AuditEntryAdded(PropertyEntry property)
         => Audit.EntryAdded(property);

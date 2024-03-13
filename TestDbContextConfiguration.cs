@@ -20,5 +20,7 @@ internal sealed class TestEntityConfiguration : IEntityTypeConfiguration<TestEnt
                 builder.Property<Guid>("Id");
                 builder.HasKey("Id");
             });
+
+        builder.HasMany(t => t.OtherEntities).WithOne(o => o.TestEntity).HasForeignKey(o => o.TestEntityId);
     }
 }

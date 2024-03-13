@@ -12,6 +12,8 @@ public class TestDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<TestEntityOtherEntity>().HasKey(to => new { to.TestEntityId, to.OtherEntityId });
+
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(TestDbContext).Assembly);
         base.OnModelCreating(modelBuilder);
     }
