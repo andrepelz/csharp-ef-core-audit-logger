@@ -71,6 +71,9 @@ public class AuditLogger<TContext>(TContext context)
         if (property.Metadata.IsPrimaryKey())
             return property.CurrentValue;
 
+        if (property.Metadata.IsForeignKey())
+            return AuditForeignKey(property, entry);
+
         var propertyAudit = entry.State switch
         {
             EntityState.Added => AuditEntryAdded(property),
@@ -80,6 +83,25 @@ public class AuditLogger<TContext>(TContext context)
         };
 
         return propertyAudit;
+    }
+
+    private static object? AuditForeignKey(PropertyEntry property, EntityEntry entry)
+    {
+        var result = new ExpandoObject() as IDictionary<string, object?>;
+
+        if(property.OriginalValue != null)
+        {
+            result["AuditState"] = Audit.State.ReferenceSevered;
+            result["Id"] = property.OriginalValue;
+        }
+
+        if(property.CurrentValue != null)
+        {
+            result["AuditState"] = Audit.State.ReferenceAdded;
+            result["Id"] = property.CurrentValue;
+        }
+
+        return result;
     }
 
     private IEnumerable<ExpandoObject>? AuditNavigation(
