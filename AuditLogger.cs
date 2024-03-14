@@ -54,9 +54,9 @@ public class AuditLogger<TContext>(TContext context)
         foreach(var navigation in entry.Metadata.GetNavigations())
         {
             var navigationName = navigation.Name;
-            var navigationForeingKey = navigation.ForeignKey;
+            var navigationForeignKey = navigation.ForeignKey;
             var navigationType = navigation.FieldInfo!.FieldType;
-            var navigationAudit = AuditNavigation(navigationType, navigationForeingKey, entry);
+            var navigationAudit = AuditNavigation(navigationType, navigationForeignKey, entry);
 
             if (navigationAudit is not null)
                 dataShapedObject.Add(navigationName, navigationAudit);
