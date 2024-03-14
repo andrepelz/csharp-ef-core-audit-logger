@@ -72,7 +72,7 @@ public class AuditLogger<TContext>(TContext context)
             return property.CurrentValue;
 
         if (property.Metadata.IsForeignKey())
-            return AuditForeignKey(property, entry);
+            return AuditForeignKey(property);
 
         var propertyAudit = entry.State switch
         {
@@ -85,20 +85,25 @@ public class AuditLogger<TContext>(TContext context)
         return propertyAudit;
     }
 
-    private static object? AuditForeignKey(PropertyEntry property, EntityEntry entry)
+    private static object? AuditForeignKey(PropertyEntry property)
     {
-        var result = new ExpandoObject() as IDictionary<string, object?>;
+        var result = new List<ExpandoObject>();
+
+        var oldReference = new ExpandoObject() as IDictionary<string, object?>;
+        var newReference = new ExpandoObject() as IDictionary<string, object?>;
 
         if(property.OriginalValue != null)
         {
-            result["AuditState"] = Audit.State.ReferenceSevered;
-            result["Id"] = property.OriginalValue;
+            oldReference["AuditState"] = Audit.State.ReferenceSevered;
+            oldReference["Id"] = property.OriginalValue;
+            result.Add((ExpandoObject) oldReference);
         }
 
         if(property.CurrentValue != null)
         {
-            result["AuditState"] = Audit.State.ReferenceAdded;
-            result["Id"] = property.CurrentValue;
+            newReference["AuditState"] = Audit.State.ReferenceAdded;
+            newReference["Id"] = property.CurrentValue;
+            result.Add((ExpandoObject) newReference);
         }
 
         return result;
@@ -158,7 +163,6 @@ public class AuditLogger<TContext>(TContext context)
     {
         if (_visitedEntries.Any(e => e == entry.Entity)) return null;
         if (entry.State == EntityState.Detached || entry.State == EntityState.Unchanged) return null;
-        // if (foreignKey.IsUnique) return null;
 
         _visitedEntries.Add(entry.Entity);
 
