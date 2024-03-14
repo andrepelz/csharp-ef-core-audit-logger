@@ -60,7 +60,7 @@ public class Audit
             .WithOldValue(property.OriginalValue);
     }
 
-    public enum State { Added, Deleted, Modified }
+    public enum State { Added, Deleted, Modified, ReferenceAdded, ReferenceSevered, Detached }
 
     public class AuditBuilder(Audit audit)
     {
