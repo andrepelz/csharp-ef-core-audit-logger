@@ -17,7 +17,7 @@ public sealed class InnerEntity : Entity
     public TestEntity? TestEntity { get; set; }
 }
 
-public sealed record TestValueObject(string Name, decimal Price);
+public sealed record TestValueObject(string Name, decimal Price) : ValueObject;
 
 public class TestEntityOtherEntity
 {
@@ -41,6 +41,8 @@ public class OtherEntity : Entity, IAggregateRoot
     public ICollection<TestEntity> TestEntities { get; set; } = [];
     public ICollection<TestEntityOtherEntity> TestEntityOtherEntities { get; set; } = [];
 }
+
+public abstract record ValueObject;
 
 public abstract class Entity
 {
