@@ -17,7 +17,33 @@ public sealed class InnerEntity : Entity
     public TestEntity? TestEntity { get; set; }
 }
 
-public sealed record TestValueObject(string Name, decimal Price) : ValueObject;
+public sealed record TestValueObject : ValueObject
+{
+    public string Name { get; init; } = string.Empty;
+    public int Price { get; init; }
+    public NestedValueObject NestedValueObject { get; init; } = default!;
+
+    private TestValueObject() { }
+    public TestValueObject(string name, int price, NestedValueObject nestedValueObject)
+    {
+        Name = name;
+        Price = price;
+        NestedValueObject = nestedValueObject;
+    }
+}
+
+public sealed record NestedValueObject : ValueObject
+{
+    public string Value1 { get; init; } = string.Empty;
+    public string Value2 { get; init; } = string.Empty;
+
+    private NestedValueObject() { }
+    public NestedValueObject(string value1, string value2) 
+    {
+        Value1 = value1;
+        Value2 = value2;
+    }
+};
 
 public class TestEntityOtherEntity
 {

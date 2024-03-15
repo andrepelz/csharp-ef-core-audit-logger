@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "ListChangeTracking": {
+      "commandName": "Project"
+    },
+    "Docker": {
+      "commandName": "Docker"
+    }
+  }
+}
