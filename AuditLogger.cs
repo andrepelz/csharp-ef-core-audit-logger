@@ -262,8 +262,10 @@ public class AuditLogger<TContext>(TContext context)
     private static Audit AuditEntryAdded(PropertyEntry property)
         => Audit.EntryAdded(property);
 
-    private static Audit AuditEntryDeleted(PropertyEntry property)
-        => Audit.EntryDeleted(property);
+    private static Audit? AuditEntryDeleted(PropertyEntry property)
+        => typeof(ValueObject).IsAssignableFrom(property.EntityEntry.Entity.GetType())
+        ? Audit.EntryDeleted(property)
+        : null;
 
     private static Audit? AuditEntryModified(PropertyEntry property)
         => property.IsModified
