@@ -77,7 +77,7 @@ public class AuditLogger<TContext>(TContext context)
         var propertyAudit = entry.State switch
         {
             EntityState.Added => AuditEntryAdded(property),
-            EntityState.Deleted => null,
+            EntityState.Deleted => AuditEntryDeleted(property),
             EntityState.Modified => AuditEntryModified(property),
             _ => null,
         };
@@ -156,6 +156,9 @@ public class AuditLogger<TContext>(TContext context)
                 resultCollection.Add(itemAudit);
         }
 
+        if(typeof(ValueObject).IsAssignableFrom(navigationType))
+            resultCollection = ResolveValueObjectAudit(resultCollection, navigationType).ToList();
+
         return resultCollection.Count > 0 ? resultCollection : null;
     }
 
@@ -176,6 +179,32 @@ public class AuditLogger<TContext>(TContext context)
             dataShapedObject.Add(key);
 
         return dataShapedObject as ExpandoObject;
+    }
+
+    private IEnumerable<ExpandoObject> ResolveValueObjectAudit(IEnumerable<ExpandoObject>? valueObjectAudit, Type valueObjectType)
+    {
+        var oldValues = valueObjectAudit!.First(audit => 
+            (Audit.State) ((IDictionary<string, object?>) audit)["AuditState"]! == Audit.State.Deleted)
+            as IDictionary<string, object?>;
+
+        var newValues = valueObjectAudit!.First(audit => 
+            (Audit.State) ((IDictionary<string, object?>) audit)["AuditState"]! == Audit.State.Added)
+            as IDictionary<string, object?>;
+        
+        var resultAudit = new ExpandoObject() as IDictionary<string, object?>;
+        resultAudit["AuditState"] = Audit.State.Modified;
+
+        foreach(var property in valueObjectType.GetProperties())
+        {
+            var propertyType = property.PropertyType;
+            dynamic oldValue = Convert.ChangeType(((Audit) oldValues[property.Name]!).OldValue, propertyType)!;
+            dynamic newValue =  Convert.ChangeType(((Audit) newValues[property.Name]!).NewValue, propertyType)!;
+
+            if(oldValue != newValue)
+                resultAudit[property.Name] = Audit.FieldModified(oldValue, newValue);
+        }
+
+        return [ (resultAudit as ExpandoObject)! ];
     }
 
 
