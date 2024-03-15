@@ -36,6 +36,8 @@ public class AuditLogger<TContext>(TContext context)
         if(entry.State == EntityState.Detached || entry.State == EntityState.Unchanged && !root) return null;
 
         _visitedEntries.Add(entry.Entity);
+
+        bool changesDetected = false;
         
         var dataShapedObject = new ExpandoObject() as IDictionary<string, object?>;
 
@@ -48,7 +50,14 @@ public class AuditLogger<TContext>(TContext context)
             var propertyAudit = AuditProperty(property, entry);
 
             if (propertyAudit is not null)
+            {
                 dataShapedObject.Add(propertyName, propertyAudit);
+
+                if(propertyName != "Id")
+                {
+                    changesDetected = true;
+                }
+            }
         }
 
         foreach(var navigation in entry.Metadata.GetNavigations())
@@ -59,10 +68,13 @@ public class AuditLogger<TContext>(TContext context)
             var navigationAudit = AuditNavigation(navigationType, navigationForeignKey, entry);
 
             if (navigationAudit is not null)
+            {
                 dataShapedObject.Add(navigationName, navigationAudit);
+                changesDetected = true;
+            }
         }
 
-        return (dataShapedObject as ExpandoObject)!;
+        return changesDetected ? (dataShapedObject as ExpandoObject)! : null;
     }
 
 
