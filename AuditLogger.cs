@@ -46,7 +46,6 @@ public class AuditLogger<TContext>(TContext context)
         foreach(var property in entry.Properties)
         {
             string propertyName = property.Metadata.Name;
-
             var propertyAudit = AuditProperty(property, entry);
 
             if (propertyAudit is not null)
@@ -57,6 +56,18 @@ public class AuditLogger<TContext>(TContext context)
                 {
                     changesDetected = true;
                 }
+            }
+        }
+
+        foreach(var complexProperty in entry.ComplexProperties)
+        {
+            string complexPropertyName = complexProperty.Metadata.Name;
+            var complexPropertyAudit = AuditComplexProperty(complexProperty, entry);
+
+            if (complexPropertyAudit is not null)
+            {
+                dataShapedObject.Add(complexPropertyName, complexPropertyAudit);
+                changesDetected = true;
             }
         }
 
@@ -97,30 +108,36 @@ public class AuditLogger<TContext>(TContext context)
         return propertyAudit;
     }
 
-    private static object? AuditForeignKey(PropertyEntry property)
+    private static object? AuditComplexProperty(ComplexPropertyEntry complexProperty, EntityEntry entry)
     {
-        var result = new List<ExpandoObject>();
+        var result = new ExpandoObject() as IDictionary<string, object?>;
+        bool changesDetected = false;
 
-        var oldReference = new ExpandoObject() as IDictionary<string, object?>;
-        var newReference = new ExpandoObject() as IDictionary<string, object?>;
-
-        if(!property.IsModified) return null;
-
-        if(((Guid) property.OriginalValue!) != Guid.Empty)
+        foreach(var property in complexProperty.Properties)
         {
-            oldReference["AuditState"] = Audit.State.ReferenceSevered;
-            oldReference["Id"] = property.OriginalValue;
-            result.Add((ExpandoObject) oldReference);
+            var propertyName = property.Metadata.Name;
+            var propertyAudit = AuditProperty(property, entry);
+
+            if(propertyAudit != null)
+            {
+                result.Add(propertyName, propertyAudit);
+                changesDetected = true;
+            }
         }
 
-        if(((Guid) property.CurrentValue!) != Guid.Empty)
+        foreach(var innerComplexProperty in complexProperty.ComplexProperties)
         {
-            newReference["AuditState"] = Audit.State.ReferenceAdded;
-            newReference["Id"] = property.CurrentValue;
-            result.Add((ExpandoObject) newReference);
+            string innerComplexPropertyName = innerComplexProperty.Metadata.Name;
+            var innerComplexPropertyAudit = AuditComplexProperty(innerComplexProperty, entry);
+
+            if (innerComplexPropertyAudit is not null)
+            {
+                result.Add(innerComplexPropertyName, innerComplexPropertyAudit);
+                changesDetected = true;
+            }
         }
 
-        return result;
+        return changesDetected ? result : null;
     }
 
     private IEnumerable<ExpandoObject>? AuditNavigation(
@@ -170,9 +187,6 @@ public class AuditLogger<TContext>(TContext context)
                 resultCollection.Add(itemAudit);
         }
 
-        if(typeof(ValueObject).IsAssignableFrom(navigationType))
-            resultCollection = ResolveValueObjectAudit(resultCollection, navigationType).ToList();
-
         return resultCollection.Count > 0 ? resultCollection : null;
     }
 
@@ -195,32 +209,30 @@ public class AuditLogger<TContext>(TContext context)
         return dataShapedObject as ExpandoObject;
     }
 
-    private IEnumerable<ExpandoObject> ResolveValueObjectAudit(IEnumerable<ExpandoObject>? valueObjectAudit, Type valueObjectType)
+    private static object? AuditForeignKey(PropertyEntry property)
     {
-        var oldValues = valueObjectAudit!.FirstOrDefault(audit => 
-            (Audit.State) ((IDictionary<string, object?>) audit)["AuditState"]! == Audit.State.Deleted)
-            as IDictionary<string, object?>;
+        var result = new List<ExpandoObject>();
 
-        var newValues = valueObjectAudit!.FirstOrDefault(audit => 
-            (Audit.State) ((IDictionary<string, object?>) audit)["AuditState"]! == Audit.State.Added)
-            as IDictionary<string, object?>;
+        var oldReference = new ExpandoObject() as IDictionary<string, object?>;
+        var newReference = new ExpandoObject() as IDictionary<string, object?>;
 
-        if(oldValues is null || newValues is null) return [];
-        
-        var resultAudit = new ExpandoObject() as IDictionary<string, object?>;
-        resultAudit["AuditState"] = Audit.State.Modified;
+        if(!property.IsModified) return null;
 
-        foreach(var property in valueObjectType.GetProperties())
+        if(((Guid) property.OriginalValue!) != Guid.Empty)
         {
-            var propertyType = property.PropertyType;
-            dynamic oldValue = Convert.ChangeType(((Audit) oldValues[property.Name]!).OldValue, propertyType)!;
-            dynamic newValue =  Convert.ChangeType(((Audit) newValues[property.Name]!).NewValue, propertyType)!;
-
-            if(oldValue != newValue)
-                resultAudit[property.Name] = Audit.FieldModified(oldValue, newValue);
+            oldReference["AuditState"] = Audit.State.ReferenceSevered;
+            oldReference["Id"] = property.OriginalValue;
+            result.Add((ExpandoObject) oldReference);
         }
 
-        return [ (resultAudit as ExpandoObject)! ];
+        if(((Guid) property.CurrentValue!) != Guid.Empty)
+        {
+            newReference["AuditState"] = Audit.State.ReferenceAdded;
+            newReference["Id"] = property.CurrentValue;
+            result.Add((ExpandoObject) newReference);
+        }
+
+        return result;
     }
 
 
