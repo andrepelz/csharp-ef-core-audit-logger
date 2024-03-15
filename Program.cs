@@ -32,7 +32,7 @@ var entity1 = new TestEntity()
             Quantity = 2
         }
     },
-    ValueObject = new("ValueObject1", 1),
+    ValueObject = new("ValueObject1", 1, new("Um", "Dois")),
     OtherEntities = [ otherEntities[1] ]
 };
 
@@ -51,7 +51,7 @@ entity.InnerEntities.Add(new() { Name = "Inner3", Quantity = 3 });
 entity.InnerEntities.Remove(entity.InnerEntities.First());
 entity.InnerEntities.First().Name = "ModifiedInner";
 
-entity.ValueObject = new("ValueObject2", 2);
+entity.ValueObject = new("ValueObject2", 2, new("Um", "Dois"));
 
 entity.TestEntityOtherEntities.Remove(entity.TestEntityOtherEntities.Where(t => t.OtherEntityId == otherEntities[1].Id).FirstOrDefault()!);
 entity.TestEntityOtherEntities.Add(new TestEntityOtherEntity(otherEntities[2]));
@@ -73,7 +73,7 @@ var newEntity = new TestEntity()
             Quantity = 2
         }
     },
-    ValueObject = new("NewValueObject1", 1)
+    ValueObject = new("NewValueObject1", 1, new("Um", "Dois"))
 };
 
 var auditLogger = new AuditLogger<TestDbContext>(db);
@@ -89,3 +89,5 @@ Console.WriteLine(JsonSerializer.Serialize(
     }));
 
 var changes = db.ChangeTracker.Entries();
+
+Console.WriteLine();

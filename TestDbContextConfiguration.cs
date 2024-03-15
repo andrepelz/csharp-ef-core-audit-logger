@@ -13,12 +13,19 @@ internal sealed class TestEntityConfiguration : IEntityTypeConfiguration<TestEnt
         builder.OwnsMany(
             e => e.InnerEntities);
 
-        builder.OwnsOne(
+        builder.ComplexProperty(
             e => e.ValueObject,
-            builder => 
+            b => 
             {
-                builder.Property<Guid>("Id");
-                builder.HasKey("Id");
+                b.Property(v => v.Name).HasColumnName("Name");
+                b.Property(v => v.Price).HasColumnName("Price");
+                b.ComplexProperty(
+                    n => n.NestedValueObject,
+                    b =>
+                    {
+                        b.Property(v => v.Value1).HasColumnName("Value1");
+                        b.Property(v => v.Value2).HasColumnName("Value2");
+                    }); 
             });
 
         builder

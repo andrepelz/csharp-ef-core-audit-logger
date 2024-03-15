@@ -8,7 +8,10 @@ public class TestDbContext : DbContext
     public DbSet<TestEntity> TestEntities { get; set; }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-        => optionsBuilder.UseInMemoryDatabase("TestDb");
+        => optionsBuilder
+                .UseNpgsql("Host=localhost;Database=ListChangeTracking;Username=postgres;Password=pass123")
+                .LogTo(Console.WriteLine, new[] { DbLoggerCategory.Database.Command.Name }, Microsoft.Extensions.Logging.LogLevel.Information)
+                .EnableSensitiveDataLogging();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
