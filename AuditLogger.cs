@@ -92,14 +92,16 @@ public class AuditLogger<TContext>(TContext context)
         var oldReference = new ExpandoObject() as IDictionary<string, object?>;
         var newReference = new ExpandoObject() as IDictionary<string, object?>;
 
-        if(property.OriginalValue != null)
+        if(!property.IsModified) return null;
+
+        if(((Guid) property.OriginalValue!) != Guid.Empty)
         {
             oldReference["AuditState"] = Audit.State.ReferenceSevered;
             oldReference["Id"] = property.OriginalValue;
             result.Add((ExpandoObject) oldReference);
         }
 
-        if(property.CurrentValue != null)
+        if(((Guid) property.CurrentValue!) != Guid.Empty)
         {
             newReference["AuditState"] = Audit.State.ReferenceAdded;
             newReference["Id"] = property.CurrentValue;
@@ -183,13 +185,15 @@ public class AuditLogger<TContext>(TContext context)
 
     private IEnumerable<ExpandoObject> ResolveValueObjectAudit(IEnumerable<ExpandoObject>? valueObjectAudit, Type valueObjectType)
     {
-        var oldValues = valueObjectAudit!.First(audit => 
+        var oldValues = valueObjectAudit!.FirstOrDefault(audit => 
             (Audit.State) ((IDictionary<string, object?>) audit)["AuditState"]! == Audit.State.Deleted)
             as IDictionary<string, object?>;
 
-        var newValues = valueObjectAudit!.First(audit => 
+        var newValues = valueObjectAudit!.FirstOrDefault(audit => 
             (Audit.State) ((IDictionary<string, object?>) audit)["AuditState"]! == Audit.State.Added)
             as IDictionary<string, object?>;
+
+        if(oldValues is null || newValues is null) return [];
         
         var resultAudit = new ExpandoObject() as IDictionary<string, object?>;
         resultAudit["AuditState"] = Audit.State.Modified;
