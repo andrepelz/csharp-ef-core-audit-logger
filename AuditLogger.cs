@@ -15,87 +15,106 @@ public class AuditLogger<TContext>(TContext context)
 {
     private readonly ICollection<object> _visitedEntries = new List<object>();
     private readonly TContext _context = context;
+    private bool _changesDetected = false;
 
 
     public ExpandoObject? CreateAuditLog<T>(T entity)
         where T : IAggregateRoot
     {
         _visitedEntries.Clear();
-
+        _changesDetected = false;
         var entry = _context.Entry(entity);
 
-        var dataShapedObject = AuditEntry(entry, root: true);
-
-        return dataShapedObject;
+        return AuditEntry(entry, root: true);
     }
 
 
     private ExpandoObject? AuditEntry(EntityEntry entry, bool root = false)
     {
         if(_visitedEntries.Any(e => e == entry.Entity)) return null;
-        if(entry.State == EntityState.Detached || entry.State == EntityState.Unchanged && !root) return null;
+        if(entry.State == EntityState.Detached
+            || entry.State == EntityState.Unchanged && !root) return null;
 
         _visitedEntries.Add(entry.Entity);
-
-        bool changesDetected = false;
-        
         var dataShapedObject = new ExpandoObject() as IDictionary<string, object?>;
 
         dataShapedObject.Add("AuditState", ResolveAuditState(entry.State));
 
+        dataShapedObject = AuditProperties(dataShapedObject, entry);
+        dataShapedObject = AuditComplexProperties(dataShapedObject, entry);
+        dataShapedObject = AuditNavigations(dataShapedObject, entry);
+
+        return _changesDetected ? (dataShapedObject as ExpandoObject)! : null;
+    }
+
+
+    private IDictionary<string, object?> AuditProperties(
+        IDictionary<string, object?> dataShapedObject,
+        EntityEntry entry)
+    {
         foreach(var property in entry.Properties)
         {
             string propertyName = property.Metadata.Name;
-            var propertyAudit = AuditProperty(property, entry);
 
-            if (propertyAudit is not null)
+            if (AuditProperty(property, entry) is var audit && audit is not null)
             {
-                dataShapedObject.Add(propertyName, propertyAudit);
+                dataShapedObject.Add(propertyName, audit);
 
                 if(propertyName != "Id")
                 {
-                    changesDetected = true;
+                    _changesDetected = true;
                 }
             }
         }
 
+        return dataShapedObject;
+    }
+
+    private IDictionary<string, object?> AuditComplexProperties(
+        IDictionary<string, object?> dataShapedObject,
+        EntityEntry entry)
+    {
         foreach(var complexProperty in entry.ComplexProperties)
         {
             string complexPropertyName = complexProperty.Metadata.Name;
-            var complexPropertyAudit = AuditComplexProperty(complexProperty, entry);
 
-            if (complexPropertyAudit is not null)
+            if (AuditComplexProperty(complexProperty, entry) is var audit && audit is not null)
             {
-                dataShapedObject.Add(complexPropertyName, complexPropertyAudit);
-                changesDetected = true;
+                dataShapedObject.Add(complexPropertyName, audit);
+                _changesDetected = true;
             }
         }
 
+        return dataShapedObject;
+    }
+
+    private IDictionary<string, object?> AuditNavigations(
+        IDictionary<string, object?> dataShapedObject,
+        EntityEntry entry)
+    {
         foreach(var navigation in entry.Metadata.GetNavigations())
         {
             var navigationName = navigation.Name;
             var navigationForeignKey = navigation.ForeignKey;
             var navigationType = navigation.FieldInfo!.FieldType;
-            var navigationAudit = AuditNavigation(navigationType, navigationForeignKey, entry);
 
-            if (navigationAudit is not null)
+            if (AuditNavigation(navigationType, navigationForeignKey, entry) is var audit 
+                && audit is not null)
             {
-                dataShapedObject.Add(navigationName, navigationAudit);
-                changesDetected = true;
+                dataShapedObject.Add(navigationName, audit);
+                _changesDetected = true;
             }
         }
 
-        return changesDetected ? (dataShapedObject as ExpandoObject)! : null;
+        return dataShapedObject;
     }
 
 
     private static object? AuditProperty(PropertyEntry property, EntityEntry entry)
     {
-        if (property.Metadata.IsPrimaryKey())
-            return property.CurrentValue;
+        if (property.Metadata.IsPrimaryKey()) return property.CurrentValue;
 
-        if (property.Metadata.IsForeignKey())
-            return AuditForeignKey(property);
+        if (property.Metadata.IsForeignKey()) return AuditForeignKey(property);
 
         var propertyAudit = entry.State switch
         {
@@ -108,10 +127,12 @@ public class AuditLogger<TContext>(TContext context)
         return propertyAudit;
     }
 
-    private static object? AuditComplexProperty(ComplexPropertyEntry complexProperty, EntityEntry entry)
+    private static object? AuditComplexProperty(
+        ComplexPropertyEntry complexProperty, 
+        EntityEntry entry)
     {
         var result = new ExpandoObject() as IDictionary<string, object?>;
-        bool changesDetected = false;
+        bool _changesDetected = false;
 
         foreach(var property in complexProperty.Properties)
         {
@@ -121,7 +142,7 @@ public class AuditLogger<TContext>(TContext context)
             if(propertyAudit != null)
             {
                 result.Add(propertyName, propertyAudit);
-                changesDetected = true;
+                _changesDetected = true;
             }
         }
 
@@ -133,11 +154,11 @@ public class AuditLogger<TContext>(TContext context)
             if (innerComplexPropertyAudit is not null)
             {
                 result.Add(innerComplexPropertyName, innerComplexPropertyAudit);
-                changesDetected = true;
+                _changesDetected = true;
             }
         }
 
-        return changesDetected ? result : null;
+        return _changesDetected ? result : null;
     }
 
     private IEnumerable<ExpandoObject>? AuditNavigation(
@@ -157,24 +178,7 @@ public class AuditLogger<TContext>(TContext context)
 
         var parentPrimaryKey = GetEntryPrimaryKey(parentEntry);
 
-        if(foreignKey.IsOwnership)
-        {
-            entries = entries
-                .Where(entry =>
-                    entry.Metadata.GetForeignKeyProperties()
-                        .Select(fk => entry.Property(fk.Name).CurrentValue)
-                        .Contains(parentPrimaryKey.Value));
-        }
-        else
-        {
-            entries = entries
-                .Where(entry =>
-                    entry.Metadata.GetForeignKeyProperties()
-                        .Select(fk => entry.Property(fk.Name))
-                        .Any(property =>
-                            Equals(property.CurrentValue, parentPrimaryKey.Value) ||
-                            Equals(property.OriginalValue, parentPrimaryKey.Value)));
-        }
+        entries = GetRelatedEntries(entries, foreignKey, parentPrimaryKey);
 
         foreach (var item in entries)
         {
@@ -190,16 +194,23 @@ public class AuditLogger<TContext>(TContext context)
         return resultCollection.Count > 0 ? resultCollection : null;
     }
 
-    private ExpandoObject? AuditNestedAggregateRoot(EntityEntry entry, IForeignKey foreignKey, KeyValuePair<string, object?> parentKey)
+    private ExpandoObject? AuditNestedAggregateRoot(
+        EntityEntry entry, 
+        IForeignKey foreignKey, 
+        KeyValuePair<string, object?> parentKey)
     {
         if (_visitedEntries.Any(e => e == entry.Entity)) return null;
-        if (entry.State == EntityState.Detached || entry.State == EntityState.Unchanged) return null;
+        if (entry.State == EntityState.Detached
+            || entry.State == EntityState.Unchanged) return null;
 
         _visitedEntries.Add(entry.Entity);
 
         var dataShapedObject = new ExpandoObject() as IDictionary<string, object?>;
 
-        var auditState = ResolveAggregateRootAuditState(entry, foreignKey.Properties[0].Name, parentKey);
+        var auditState = ResolveAggregateRootAuditState(
+            entry, 
+            foreignKey.Properties[0].Name, 
+            parentKey);
 
         dataShapedObject.Add("AuditState", auditState);
 
@@ -241,7 +252,8 @@ public class AuditLogger<TContext>(TContext context)
             .Where(pair => pair.Key == "Id")
             .First();
 
-    private static IEnumerable<KeyValuePair<string, object?>> GetEntryCompositePrimaryKey(EntityEntry entry)
+    private static IEnumerable<KeyValuePair<string, object?>> GetEntryCompositePrimaryKey(
+        EntityEntry entry)
         => entry.KeyValuesOf();
 
 
@@ -254,7 +266,10 @@ public class AuditLogger<TContext>(TContext context)
             _ => Audit.State.Modified,
         };
 
-    private Audit.State ResolveAggregateRootAuditState(EntityEntry entry, string foreignKeyName, KeyValuePair<string, object?> parentKey)
+    private Audit.State ResolveAggregateRootAuditState(
+        EntityEntry entry, 
+        string foreignKeyName, 
+        KeyValuePair<string, object?> parentKey)
     {
         switch (entry.State)
         {
@@ -265,7 +280,8 @@ public class AuditLogger<TContext>(TContext context)
             case EntityState.Modified:
                 var foreignKey = entry.Property(foreignKeyName);
 
-                if (foreignKey.CurrentValue is not null && (Guid) foreignKey.CurrentValue == (Guid) parentKey.Value!)
+                if (foreignKey.CurrentValue is not null 
+                    && (Guid) foreignKey.CurrentValue == (Guid) parentKey.Value!)
                 {
                     return Audit.State.ReferenceAdded;
                 }
@@ -285,6 +301,19 @@ public class AuditLogger<TContext>(TContext context)
                 m.GetGenericArguments().Length == 1 &&
                 m.GetParameters().Length == 0)
             .MakeGenericMethod(genericType);
+
+    private static IEnumerable<EntityEntry> GetRelatedEntries(
+        IEnumerable<EntityEntry> entries, 
+        IForeignKey foreignKey,
+        KeyValuePair<string, object?> parentKey)
+        => entries
+            .Where(entry =>
+                entry.Metadata.GetForeignKeyProperties()
+                    .Select(fk => entry.Property(fk.Name))
+                    .Any(property =>
+                        Equals(property.CurrentValue, parentKey.Value)
+                        || (!foreignKey.IsOwnership
+                        && Equals(property.OriginalValue, parentKey.Value))));
 
 
     private static Audit AuditEntryAdded(PropertyEntry property)
